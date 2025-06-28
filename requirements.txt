@@ -1,0 +1,7 @@
+streamlit
+python-binance
+pandas
+ta
+requests
+plotly
+streamlit_js_eval
