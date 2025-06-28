@@ -3,5 +3,5 @@ python-binance
 pandas
 ta
 requests
-plotly  <-- **이 줄을 추가해주세요!**
+plotly
 streamlit_js_eval
