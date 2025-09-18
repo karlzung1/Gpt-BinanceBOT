@@ -581,9 +581,7 @@ const CryptoSignalChecker = () => {
       
       // 텔레그램 알림 전송
       if (Object.keys(newSignals).length > 0) {
-        setTimeout(() => {
-          sendTelegramNotification(top3Long, top3Short);
-        }, 1000);
+        sendTelegramNotification(top3Long, top3Short);
       }
 
     } catch (error) {
@@ -604,6 +602,20 @@ const CryptoSignalChecker = () => {
     initializeApp();
   }, [fetchBinanceFuturesSymbols]);
 
+  // 1시간마다 자동 분석 및 텔레그램 전송 (앱 로드 시 시작)
+  useEffect(() => {
+    // 초기 분석 실행
+    fetchSignals();
+
+    // 1시간(3600000ms)마다 자동 실행
+    const intervalId = setInterval(() => {
+      fetchSignals();
+    }, 3600000);
+
+    // 컴포넌트 언마운트 시 인터벌 정리
+    return () => clearInterval(intervalId);
+  }, [allCoins, selectedList]); // 의존성 배열에 allCoins와 selectedList 추가하여 변화 시 재설정
+
   // 선택된 리스트 변경 시 신호 재계산
   useEffect(() => {
     if (allCoins.length > 0 && Object.keys(signals).length > 0) {
@@ -617,133 +629,103 @@ const CryptoSignalChecker = () => {
           }
         });
         
-        if (Object.keys(filteredSignals).length > 0) {
-          setSignals(filteredSignals);
-          const { top3Long, top3Short } = calculateTopSignals(filteredSignals);
-          setTop3LongSignals(top3Long);
-          setTop3ShortSignals(top3Short);
-        }
+        const { top3Long, top3Short } = calculateTopSignals(filteredSignals);
+        setTop3LongSignals(top3Long);
+        setTop3ShortSignals(top3Short);
       }
     }
-  }, [selectedList, allCoins]);
+  }, [selectedList, signals, allCoins]);
 
-  // 자동 분석 타이머 추가 (1시간마다 자동 실행, 텔레그램 알림 목적)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchSignals();
-    }, 3600000); // 1시간 = 3600초 * 1000ms
-
-    return () => clearInterval(interval);
-  }, []);
-
-  const getSignalColor = (confidence) => {
-    if (confidence >= 80) return 'text-green-400 bg-green-900/20';
-    if (confidence >= 70) return 'text-green-300 bg-green-800/20';
-    if (confidence >= 60) return 'text-yellow-300 bg-yellow-800/20';
-    if (confidence >= 50) return 'text-orange-300 bg-orange-800/20';
-    return 'text-red-300 bg-red-800/20';
-  };
-
-  const getRiskColor = (risk) => {
-    switch(risk) {
-      case 'CHAOS': return 'text-gray-400 bg-gray-700/50';
-      case 'EXTREME': return 'text-fuchsia-500 bg-fuchsia-900/30';
-      case 'HIGH': return 'text-red-400 bg-red-900/20';
-      case 'MEDIUM': return 'text-yellow-400 bg-yellow-800/20';
-      case 'LOW': return 'text-green-400 bg-green-800/20';
-      default: return 'text-gray-400 bg-gray-800/20';
-    }
-  };
-
+  // 신호 정렬 함수
   const getSortedSignals = (signals) => {
-    const entries = Object.entries(signals);
+    let sorted = Object.entries(signals);
+    
+    if (sortBy === 'longDesc') {
+      sorted = sorted.sort(([,a], [,b]) => b.longConfidence - a.longConfidence);
+    } else if (sortBy === 'shortDesc') {
+      sorted = sorted.sort(([,a], [,b]) => b.shortConfidence - a.shortConfidence);
+    } else if (sortBy === 'maxDesc') {
+      sorted = sorted.sort(([,a], [,b]) => b.confidenceScore - a.confidenceScore);
+    } else if (sortBy === 'alphabetical') {
+      sorted = sorted.sort(([a], [b]) => a.localeCompare(b));
+    }
+    
+    return sorted;
+  };
 
-    switch(sortBy) {
-      case 'longDesc':
-        return entries.sort(([,a], [,b]) => b.longConfidence - a.longConfidence);
-      case 'shortDesc':
-        return entries.sort(([,a], [,b]) => b.shortConfidence - a.shortConfidence);
-      case 'maxDesc':
-        return entries.sort(([,a], [,b]) =>
-          Math.max(b.longConfidence, b.shortConfidence) - Math.max(a.longConfidence, a.shortConfidence)
-        );
-      case 'alphabetical':
-        return entries.sort(([a], [b]) => a.localeCompare(b));
-      default:
-        return entries;
+  // 추천 아이콘 가져오기
+  const getRecommendationIcon = (rec) => {
+    switch (rec) {
+      case 'STRONG_LONG': return <TrendingUp className="w-4 h-4 text-green-500" />;
+      case 'WEAK_LONG': return <TrendingUp className="w-4 h-4 text-green-300" />;
+      case 'STRONG_SHORT': return <TrendingDown className="w-4 h-4 text-red-500" />;
+      case 'WEAK_SHORT': return <TrendingDown className="w-4 h-4 text-red-300" />;
+      default: return <Activity className="w-4 h-4 text-yellow-500" />;
     }
   };
 
-  const getRecommendationIcon = (rec) => {
-    switch(rec) {
-      case 'STRONG_LONG': return <TrendingUp className="w-5 h-5 text-green-400" />;
-      case 'STRONG_SHORT': return <TrendingDown className="w-5 h-5 text-red-400" />;
-      case 'WEAK_LONG': return <TrendingUp className="w-4 h-4 text-green-300" />;
-      case 'WEAK_SHORT': return <TrendingDown className="w-4 h-4 text-red-300" />;
-      default: return <Activity className="w-4 h-4 text-gray-400" />;
+  // 리스크 색상 가져오기
+  const getRiskColor = (risk) => {
+    switch (risk) {
+      case 'LOW': return 'bg-green-900/50 text-green-400';
+      case 'MEDIUM': return 'bg-yellow-900/50 text-yellow-400';
+      case 'HIGH': return 'bg-orange-900/50 text-orange-400';
+      case 'EXTREME': return 'bg-red-900/50 text-red-400';
+      case 'CHAOS': return 'bg-purple-900/50 text-purple-400';
+      default: return 'bg-gray-700 text-gray-400';
     }
+  };
+
+  // 신호 색상 가져오기
+  const getSignalColor = (conf) => {
+    if (conf >= 80) return 'bg-green-600/80 text-green-100';
+    if (conf >= 60) return 'bg-yellow-600/80 text-yellow-100';
+    if (conf >= 40) return 'bg-orange-600/80 text-orange-100';
+    return 'bg-red-600/80 text-red-100';
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black text-white p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
-
-        {/* 헤더 */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 mb-6 border border-gray-700">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                <Activity className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-white">🚀 Project Hades AI - 실시간 분석 시스템</h1>
-                <p className="text-gray-400">바이낸스 선물 실시간 데이터 기반 정밀 기술적 분석 ({allCoins.length}개)</p>
-              </div>
+        <header className="mb-8">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+            <div>
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 text-transparent bg-clip-text">
+                Project Hades AI
+              </h1>
+              <p className="text-sm text-gray-400 mt-1">실시간 바이낸스 선물 기술적 분석 시스템</p>
             </div>
-            <div className="flex items-center space-x-3">
-              {telegramStatus && (
-                <div className="flex items-center space-x-2 px-3 py-1 bg-blue-900/30 rounded-lg">
-                  <Send className="w-4 h-4 text-blue-400" />
-                  <span className="text-blue-400 text-sm">{telegramStatus}</span>
-                </div>
-              )}
+            
+            <div className="flex items-center space-x-4">
               <button
                 onClick={fetchSignals}
                 disabled={loading}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white transition-colors disabled:opacity-50"
+                className={`px-6 py-2 rounded-lg font-medium transition-all flex items-center space-x-2 ${
+                  loading 
+                    ? 'bg-gray-700 cursor-not-allowed' 
+                    : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500'
+                }`}
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                <span>{loading ? '분석 중...' : '실시간 분석'}</span>
+                <span>실시간 분석</span>
               </button>
+              
+              {telegramStatus && (
+                <span className={`text-sm ${telegramStatus.includes('✅') ? 'text-green-400' : 'text-red-400'}`}>
+                  {telegramStatus}
+                </span>
+              )}
             </div>
           </div>
 
-          {/* 분석 진행도 */}
-          {loading && analysisProgress > 0 && (
-            <div className="mb-4">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-gray-400">실시간 데이터 수집 및 분석 중...</span>
-                <span className="text-sm text-blue-400">{analysisProgress}%</span>
-              </div>
-              <div className="w-full bg-gray-700 rounded-full h-2">
-                <div
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${analysisProgress}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* 카테고리 선택 */}
-          <div className="flex flex-wrap gap-2 mb-4">
-            <span className="text-sm text-gray-400 py-2">정렬:</span>
+          <div className="flex flex-wrap gap-2 mt-4">
             <button
               onClick={() => setSortBy('longDesc')}
               className={`px-3 py-1 rounded text-sm transition-colors ${
                 sortBy === 'longDesc' ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
               }`}
             >
-              🔥 Long 높은순
+              📈 Long 높은순
             </button>
             <button
               onClick={() => setSortBy('shortDesc')}
@@ -813,7 +795,7 @@ const CryptoSignalChecker = () => {
               <span className="text-green-400 ml-2">✓ 실제 시장 데이터</span>
             </p>
           )}
-        </div>
+        </header>
 
         {/* Top 6 섹션 (Long 3 + Short 3) */}
         {(top3LongSignals.length > 0 || top3ShortSignals.length > 0) && (
